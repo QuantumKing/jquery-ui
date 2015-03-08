@@ -31,8 +31,43 @@
 	}
 }(function( $ ) {
 
+transforms = {
+  'webkitTransform':'-webkit-transform',
+  'OTransform':'-o-transform',
+  'msTransform':'-ms-transform',
+  'MozTransform':'-moz-transform',
+  'transform':'transform'
+};
+
+function hasTransform(transform){
+  var el = document.createElement('p'),
+  has3d;
+
+  // Add it to the body to get the computed style
+  document.body.insertBefore(el, null);
+
+  for(var t in transforms){
+    if (transforms.hasOwnProperty(t)) {
+      if( el.style[t] !== undefined ){
+        el.style[t] = transform;
+        has3d = window.getComputedStyle(el).getPropertyValue(transforms[t]);
+      }
+    }
+  }
+
+  document.body.removeChild(el);
+
+  return (has3d !== undefined && has3d.length > 0 && has3d !== "none");
+}
+
+var has3d, hasTranslate;
+$(function() {
+	has3d = hasTransform('translate3d(1px,1px,1px)');
+	hasTranslate = hasTransform('translate(1px,1px,1px)');
+});
+
 return $.widget("ui.sortable", $.ui.mouse, {
-	version: "@VERSION",
+	version: "1.11.3",
 	widgetEventPrefix: "sort",
 	ready: false,
 	options: {
@@ -83,11 +118,16 @@ return $.widget("ui.sortable", $.ui.mouse, {
 	},
 
 	_create: function() {
+
+		var o = this.options;
 		this.containerCache = {};
 		this.element.addClass("ui-sortable");
 
 		//Get the items
 		this.refresh();
+
+		//Let's determine if the items are being displayed horizontally
+		this.floating = this.items.length ? o.axis === "x" || this._isFloating(this.items[0].item) : false;
 
 		//Let's determine the parent's offset
 		this.offset = this.element.offset();
@@ -223,6 +263,9 @@ return $.widget("ui.sortable", $.ui.mouse, {
 			relative: this._getRelativeOffset() //This is a relative to absolute position minus the actual position calculation - only used for relative positioned helper
 		});
 
+		//Create the placeholder
+		this._createPlaceholder();
+
 		// Only after we got the offset, we can change the helper's position to absolute
 		// TODO: Still need to figure out a way to make relative sorting possible
 		this.helper.css("position", "absolute");
@@ -233,6 +276,10 @@ return $.widget("ui.sortable", $.ui.mouse, {
 		this.originalPageX = event.pageX;
 		this.originalPageY = event.pageY;
 
+		// Set helper's initial position
+		this.helper[0].style.left = this.originalPosition.left + "px";
+		this.helper[0].style.top = this.originalPosition.top + "px";
+		
 		//Adjust the mouse offset relative to the helper if "cursorAt" is supplied
 		(o.cursorAt && this._adjustOffsetFromHelper(o.cursorAt));
 
@@ -243,9 +290,6 @@ return $.widget("ui.sortable", $.ui.mouse, {
 		if(this.helper[0] !== this.currentItem[0]) {
 			this.currentItem.hide();
 		}
-
-		//Create the placeholder
-		this._createPlaceholder();
 
 		//Set a containment if given in the options
 		if(o.containment) {
@@ -368,11 +412,37 @@ return $.widget("ui.sortable", $.ui.mouse, {
 		this.positionAbs = this._convertPositionTo("absolute");
 
 		//Set the helper position
-		if(!this.options.axis || this.options.axis !== "y") {
-			this.helper[0].style.left = this.position.left+"px";
-		}
-		if(!this.options.axis || this.options.axis !== "x") {
-			this.helper[0].style.top = this.position.top+"px";
+		if (has3d || hasTranslate) {
+			var dx = this.position.left - this.originalPosition.left;
+			var dy = this.position.top - this.originalPosition.top;
+			var translate = has3d ? "translate3d(" : "translate(";
+
+			if(!this.options.axis || this.options.axis !== "y") {
+				translate += dx + "px,";
+			} else {
+				translate += "0,";
+			}
+
+			if(!this.options.axis || this.options.axis !== "x") {
+				translate += dy + "px";
+			} else {
+				translate += "0";
+			}
+
+			if (has3d) {
+				translate += ",0)";
+			}
+
+			for (t in transforms) {
+				this.helper[0].style[t] = translate;
+			}
+		} else {
+			if(!this.options.axis || this.options.axis !== "y") {
+				this.helper[0].style.left = this.position.left+"px";
+			}
+			if(!this.options.axis || this.options.axis !== "x") {
+				this.helper[0].style.top = this.position.top+"px";
+			}
 		}
 
 		//Rearrange
@@ -732,11 +802,6 @@ return $.widget("ui.sortable", $.ui.mouse, {
 
 	refreshPositions: function(fast) {
 
-		// Determine whether items are being displayed horizontally
-		this.floating = this.items.length ?
-			this.options.axis === "x" || this._isFloating( this.items[ 0 ].item ) :
-			false;
-
 		//This has to be redone because due to the item being moved out/into the offsetParent, the offsetParent's position will change
 		if(this.offsetParent && this.helper) {
 			this.offset.parent = this._getParentOffset();
@@ -794,13 +859,12 @@ return $.widget("ui.sortable", $.ui.mouse, {
 							.addClass(className || that.currentItem[0].className+" ui-sortable-placeholder")
 							.removeClass("ui-sortable-helper");
 
-					if ( nodeName === "tbody" ) {
-						that._createTrPlaceholder(
-							that.currentItem.find( "tr" ).eq( 0 ),
-							$( "<tr>", that.document[ 0 ] ).appendTo( element )
-						);
-					} else if ( nodeName === "tr" ) {
-						that._createTrPlaceholder( that.currentItem, element );
+					if ( nodeName === "tr" ) {
+						that.currentItem.children().each(function() {
+							$( "<td>&#160;</td>", that.document[0] )
+								.attr( "colspan", $( this ).attr( "colspan" ) || 1 )
+								.appendTo( element );
+						});
 					} else if ( nodeName === "img" ) {
 						element.attr( "src", that.currentItem.attr( "src" ) );
 					}
@@ -835,16 +899,6 @@ return $.widget("ui.sortable", $.ui.mouse, {
 		//Update the size of the placeholder (TODO: Logic to fuzzy, see line 316/317)
 		o.placeholder.update(that, that.placeholder);
 
-	},
-
-	_createTrPlaceholder: function( sourceTr, targetTr ) {
-		var that = this;
-
-		sourceTr.children().each(function() {
-			$( "<td>&#160;</td>", that.document[ 0 ] )
-				.attr( "colspan", $( this ).attr( "colspan" ) || 1 )
-				.appendTo( targetTr );
-		});
 	},
 
 	_contactContainers: function(event) {
@@ -1198,7 +1252,6 @@ return $.widget("ui.sortable", $.ui.mouse, {
 	},
 
 	_clear: function(event, noPropagation) {
-
 		this.reverting = false;
 		// We delay all events that have to be triggered to after the point where the placeholder has been removed and
 		// everything else normalized again
@@ -1213,6 +1266,10 @@ return $.widget("ui.sortable", $.ui.mouse, {
 		this._noFinalSort = null;
 
 		if(this.helper[0] === this.currentItem[0]) {
+			for (t in transforms) {
+				this.helper[0].style[t] = '';
+			}
+
 			for(i in this._storedCSS) {
 				if(this._storedCSS[i] === "auto" || this._storedCSS[i] === "static") {
 					this._storedCSS[i] = "";
