@@ -31,7 +31,7 @@
 	}
 }(function( $ ) {
 
-transforms = {
+var transforms = {
   'webkitTransform':'-webkit-transform',
   'OTransform':'-o-transform',
   'msTransform':'-ms-transform',
