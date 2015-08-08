@@ -433,7 +433,7 @@ return $.widget("ui.sortable", $.ui.mouse, {
 				translate += ",0)";
 			}
 
-			for (t in transforms) {
+			for (var t in transforms) {
 				this.helper[0].style[t] = translate;
 			}
 		} else {
@@ -1266,7 +1266,7 @@ return $.widget("ui.sortable", $.ui.mouse, {
 		this._noFinalSort = null;
 
 		if(this.helper[0] === this.currentItem[0]) {
-			for (t in transforms) {
+			for (var t in transforms) {
 				this.helper[0].style[t] = '';
 			}
 
